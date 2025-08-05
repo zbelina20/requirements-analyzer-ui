@@ -4,7 +4,7 @@
     "lib": [
       "dom",
       "dom.iterable",
-      "esnext"
+      "es6"
     ],
     "allowJs": true,
     "skipLibCheck": true,
@@ -18,9 +18,19 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "strictNullChecks": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
   },
   "include": [
     "src"
+  ],
+  "exclude": [
+    "node_modules",
+    "build"
   ]
 }
