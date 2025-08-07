@@ -1,25 +1,20 @@
 import axios from 'axios';
 
-// Use the correct backend port from launchSettings.json
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://localhost:7277/api';
+// Update to match the backend port from launchSettings.json
+const API_BASE_URL = 'http://localhost:5074/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000, // 30 second timeout for LLM calls
-  // Allow HTTPS with self-signed certificates in development
-  httpsAgent: process.env.NODE_ENV === 'development' ? {
-    rejectUnauthorized: false
-  } : undefined
+  timeout: 10000, // 10 second timeout
 });
 
-// Request interceptor for debugging
+// Request interceptor for debugging - reduced logging
 api.interceptors.request.use(
   (config) => {
     console.log('API Request:', config.method?.toUpperCase(), config.url);
-    console.log('Request Data:', config.data);
     return config;
   },
   (error) => {
@@ -28,20 +23,17 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor for error handling
+// Response interceptor for error handling - improved
 api.interceptors.response.use(
   (response) => {
     console.log('API Response:', response.status, response.config.url);
-    console.log('Response Data:', response.data);
     return response;
   },
   (error) => {
-    console.error('API Response Error:', {
-      status: error.response?.status,
-      message: error.message,
-      url: error.config?.url,
-      data: error.response?.data
-    });
+    if (error.code === 'ECONNREFUSED') {
+      console.error('Connection refused - ensure backend is running on port 5074');
+    }
+    console.error('API Error:', error.response?.status, error.message);
     return Promise.reject(error);
   }
 );
@@ -84,98 +76,42 @@ export interface EnhanceRequest {
   issues?: QualityIssue[];
 }
 
-export interface HealthResponse {
-  status: string;
-  message: string;
-  perplexityConnected?: boolean;
-  timestamp: string;
-  version?: string;
-}
-
-// API functions
+// API functions with better error handling
 export const requirementsApi = {
-  // Test API connection - FIXED ENDPOINT
-  testConnection: async (): Promise<HealthResponse> => {
-    const response = await api.get<HealthResponse>('/requirements/health');
-    return response.data;
+  // Test API connection
+  testConnection: async (): Promise<{ status: string; message: string }> => {
+    try {
+      const response = await api.get('/requirements/health');
+      return response.data;
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      return { status: 'error', message: 'Failed to connect to API' };
+    }
   },
 
   // Analyze a single requirement for quality issues
   analyzeRequirement: async (requirement: string): Promise<RequirementAnalysis> => {
-    if (!requirement?.trim()) {
-      throw new Error('Requirement text is required');
-    }
-
-    console.log('Analyzing requirement:', requirement.substring(0, 100) + '...');
-    
     const response = await api.post<RequirementAnalysis>('/requirements/analyze', {
-      text: requirement.trim()
+      text: requirement
     });
-    
-    console.log('Analysis result:', response.data);
     return response.data;
   },
 
   // Enhance a requirement based on identified issues
   enhanceRequirement: async (requirement: string, issues?: QualityIssue[]): Promise<EnhancementResponse> => {
-    if (!requirement?.trim()) {
-      throw new Error('Requirement text is required');
-    }
-
-    console.log('Enhancing requirement:', requirement.substring(0, 100) + '...');
-    console.log('Based on issues:', issues?.length || 0, 'issues');
-    
     const response = await api.post<EnhancementResponse>('/requirements/enhance', {
-      text: requirement.trim(),
-      issues: issues || []
+      text: requirement,
+      issues: issues
     });
-    
-    console.log('Enhancement result:', response.data);
     return response.data;
   },
 
   // Batch analyze multiple requirements
   batchAnalyze: async (requirements: string[]): Promise<RequirementAnalysis[]> => {
-    if (!requirements?.length) {
-      throw new Error('Requirements array is required');
-    }
-
-    const validRequirements = requirements.filter(req => req?.trim());
-    if (validRequirements.length === 0) {
-      throw new Error('At least one valid requirement is required');
-    }
-
-    if (validRequirements.length > 50) {
-      throw new Error('Maximum 50 requirements allowed for batch processing');
-    }
-
-    console.log('Batch analyzing:', validRequirements.length, 'requirements');
-    
     const response = await api.post<RequirementAnalysis[]>('/requirements/batch-analyze', {
-      requirements: validRequirements
+      requirements: requirements
     });
-    
-    console.log('Batch analysis result:', response.data.length, 'analyses completed');
     return response.data;
-  },
-
-  // Get API statistics and capabilities
-  getStats: async () => {
-    const response = await api.get('/requirements/stats');
-    return response.data;
-  }
-};
-
-// Development helper to test backend connection
-export const testBackendConnection = async (): Promise<boolean> => {
-  try {
-    console.log('Testing backend connection...');
-    const health = await requirementsApi.testConnection();
-    console.log('Backend connected:', health);
-    return true;
-  } catch (error) {
-    console.error('Backend connection failed:', error);
-    return false;
   }
 };
 

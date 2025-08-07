@@ -1,448 +1,852 @@
-// src/components/Dashboard.tsx
 import React, { useState, useEffect } from 'react';
-import {
-  Card,
-  Row,
-  Col,
-  Statistic,
-  Typography,
-  Space,
-  Button,
-  Table,
-  Tag,
-  Progress,
-  Alert,
-  List,
-  Tooltip
-} from 'antd';
-import {
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
-  Legend,
-  ResponsiveContainer
-} from 'recharts';
-import {
-  DashboardOutlined,
-  TrophyOutlined,
-  ExclamationCircleOutlined,
-  BarChartOutlined,
-  LineChartOutlined,
-  FileTextOutlined,
-  ClockCircleOutlined
-} from '@ant-design/icons';
-import { requirementsApi } from '../services/api';
 
-const { Text } = Typography;
-
-interface DashboardData {
-  recentAnalyses: Array<{
-    id: string;
-    text: string;
-    score: number;
-    issues: number;
-    analyzedAt: string;
-  }>;
-  qualityTrends: Array<{
-    date: string;
-    averageScore: number;
-    totalAnalyses: number;
-  }>;
-  issueDistribution: Array<{
-    type: string;
-    count: number;
-    percentage: number;
-  }>;
-  severityBreakdown: Array<{
-    severity: string;
-    count: number;
-    color: string;
-  }>;
+// Type definitions
+interface QualityIssue {
+  type: string;
+  severity: 'critical' | 'major' | 'minor';
+  description: string;
+  problematicText: string;
+  suggestion: string;
 }
 
-const Dashboard: React.FC = () => {
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [apiStatus, setApiStatus] = useState<'healthy' | 'degraded' | 'unhealthy'>('healthy');
+interface AnalysisResponse {
+  overallScore: number;
+  issues: QualityIssue[];
+  analyzedAt: string;
+}
 
+interface Enhancement {
+  text: string;
+  changes: string[];
+  improvements: string[];
+  qualityScore: number;
+  rationale?: string;
+}
+
+interface EnhancementResponse {
+  enhancements: Enhancement[];
+  recommendedIndex?: number;
+}
+
+interface ApiStatus {
+  status: string;
+  loading: boolean;
+  perplexityConnected?: boolean;
+  message?: string;
+}
+
+interface BatchAnalysisResult extends AnalysisResponse {
+  batchResults?: AnalysisResponse[];
+}
+
+// API service
+const requirementsApi = {
+  testConnection: async (): Promise<{ status: string; message: string; perplexityConnected: boolean }> => {
+    try {
+      const response = await fetch('http://localhost:5074/api/requirements/health');
+      if (!response.ok) throw new Error('API not responding');
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      return { status: 'error', message: 'Failed to connect to API', perplexityConnected: false };
+    }
+  },
+  
+  analyzeRequirement: async (requirement: string): Promise<AnalysisResponse> => {
+    try {
+      const response = await fetch('http://localhost:5074/api/requirements/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: requirement })
+      });
+      if (!response.ok) throw new Error('Analysis failed');
+      return await response.json();
+    } catch (error) {
+      console.error('Analysis failed:', error);
+      throw error;
+    }
+  },
+  
+  enhanceRequirement: async (requirement: string, issues: QualityIssue[]): Promise<EnhancementResponse> => {
+    try {
+      const response = await fetch('http://localhost:5074/api/requirements/enhance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: requirement, issues })
+      });
+      if (!response.ok) throw new Error('Enhancement failed');
+      return await response.json();
+    } catch (error) {
+      console.error('Enhancement failed:', error);
+      throw error;
+    }
+  },
+  
+  batchAnalyze: async (requirements: string[]): Promise<AnalysisResponse[]> => {
+    try {
+      const response = await fetch('http://localhost:5074/api/requirements/batch-analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirements })
+      });
+      if (!response.ok) throw new Error('Batch analysis failed');
+      return await response.json();
+    } catch (error) {
+      console.error('Batch analysis failed:', error);
+      throw error;
+    }
+  }
+};
+
+const Dashboard: React.FC = () => {
+  const [apiStatus, setApiStatus] = useState<ApiStatus>({ status: 'unknown', loading: true });
+  const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<'single' | 'batch'>('single');
+  const [requirement, setRequirement] = useState<string>('');
+  const [batchRequirements, setBatchRequirements] = useState<string>('');
+  const [analysisResult, setAnalysisResult] = useState<BatchAnalysisResult | null>(null);
+  const [enhancementResult, setEnhancementResult] = useState<EnhancementResponse | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [message, setMessage] = useState<string>('');
+
+  // Check API status on mount
   useEffect(() => {
-    loadDashboardData();
-    checkApiHealth();
+    checkApiStatus();
   }, []);
 
-  const loadDashboardData = async () => {
-    try {
-      setLoading(true);
-      
-      // Since we don't have historical data endpoints yet, we'll generate mock data
-      // In a real implementation, this would fetch from your analytics endpoints
-      const mockData: DashboardData = {
-        recentAnalyses: [
-          {
-            id: '1',
-            text: 'The system should be user-friendly and fast',
-            score: 65,
-            issues: 3,
-            analyzedAt: new Date(Date.now() - 1000 * 60 * 30).toISOString() // 30 min ago
-          },
-          {
-            id: '2',
-            text: 'The application shall authenticate users within 2 seconds',
-            score: 88,
-            issues: 1,
-            analyzedAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString() // 2 hours ago
-          },
-          {
-            id: '3',
-            text: 'Users must be able to login efficiently',
-            score: 45,
-            issues: 4,
-            analyzedAt: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString() // 4 hours ago
-          },
-          {
-            id: '4',
-            text: 'The system shall process payment transactions with 99.9% accuracy',
-            score: 92,
-            issues: 0,
-            analyzedAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString() // 6 hours ago
-          },
-          {
-            id: '5',
-            text: 'The interface should look good and work well',
-            score: 35,
-            issues: 5,
-            analyzedAt: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString() // 8 hours ago
-          }
-        ],
-        qualityTrends: [
-          { date: '2024-01-01', averageScore: 65, totalAnalyses: 12 },
-          { date: '2024-01-02', averageScore: 68, totalAnalyses: 15 },
-          { date: '2024-01-03', averageScore: 72, totalAnalyses: 18 },
-          { date: '2024-01-04', averageScore: 69, totalAnalyses: 22 },
-          { date: '2024-01-05', averageScore: 74, totalAnalyses: 28 },
-          { date: '2024-01-06', averageScore: 76, totalAnalyses: 25 },
-          { date: '2024-01-07', averageScore: 78, totalAnalyses: 30 }
-        ],
-        issueDistribution: [
-          { type: 'Ambiguity', count: 45, percentage: 35 },
-          { type: 'Completeness', count: 32, percentage: 25 },
-          { type: 'Verifiability', count: 28, percentage: 22 },
-          { type: 'Consistency', count: 15, percentage: 12 },
-          { type: 'Traceability', count: 8, percentage: 6 }
-        ],
-        severityBreakdown: [
-          { severity: 'Critical', count: 15, color: '#ff4d4f' },
-          { severity: 'Major', count: 45, color: '#faad14' },
-          { severity: 'Minor', count: 68, color: '#1890ff' }
-        ]
-      };
+  const showMessage = (text: string, type: string = 'info') => {
+    setMessage(`${type}: ${text}`);
+    setTimeout(() => setMessage(''), 5000);
+  };
 
-      setDashboardData(mockData);
+  const checkApiStatus = async () => {
+    setApiStatus({ status: 'unknown', loading: true });
+    try {
+      const result = await requirementsApi.testConnection();
+      setApiStatus({
+        status: result.status === 'healthy' ? 'healthy' : 'degraded',
+        loading: false,
+        perplexityConnected: result.perplexityConnected,
+        message: result.message
+      });
     } catch (error) {
-      console.error('Failed to load dashboard data:', error);
+      setApiStatus({
+        status: 'error',
+        loading: false,
+        perplexityConnected: false,
+        message: 'Failed to connect to API'
+      });
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!requirement.trim()) {
+      showMessage('Please enter a requirement to analyze', 'error');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await requirementsApi.analyzeRequirement(requirement);
+      setAnalysisResult(result);
+      showMessage('Analysis completed successfully', 'success');
+    } catch (error) {
+      showMessage('Failed to analyze requirement', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const checkApiHealth = async () => {
+  const handleEnhance = async () => {
+    if (!analysisResult || analysisResult.batchResults) {
+      showMessage('Please analyze the requirement first', 'error');
+      return;
+    }
+
+    setLoading(true);
     try {
-      await requirementsApi.testConnection();
-      setApiStatus('healthy');
+      const result = await requirementsApi.enhanceRequirement(requirement, analysisResult.issues);
+      setEnhancementResult(result);
+      showMessage('Enhancement completed successfully', 'success');
     } catch (error) {
-      setApiStatus('degraded');
+      showMessage('Failed to enhance requirement', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const getScoreColor = (score: number) => {
+  const handleBatchAnalyze = async () => {
+    const requirements = batchRequirements
+      .split('\n')
+      .filter(req => req.trim())
+      .map(req => req.trim());
+
+    if (requirements.length === 0) {
+      showMessage('Please enter at least one requirement', 'error');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const results = await requirementsApi.batchAnalyze(requirements);
+      setAnalysisResult({ batchResults: results } as BatchAnalysisResult);
+      showMessage(`Batch analysis completed for ${results.length} requirements`, 'success');
+    } catch (error) {
+      showMessage('Failed to perform batch analysis', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getScoreColor = (score: number): string => {
     if (score >= 80) return '#52c41a';
     if (score >= 60) return '#faad14';
-    return '#ff4d4f';
+    return '#f5222d';
   };
 
-  const getScoreStatus = (score: number) => {
-    if (score >= 80) return 'success';
-    if (score >= 60) return 'normal';
-    return 'exception';
-  };
-
-  const recentAnalysesColumns = [
-    {
-      title: 'Requirement',
-      dataIndex: 'text',
-      key: 'text',
-      ellipsis: true,
-      render: (text: string) => (
-        <Tooltip title={text}>
-          <Text>{text.length > 50 ? `${text.substring(0, 50)}...` : text}</Text>
-        </Tooltip>
-      )
-    },
-    {
-      title: 'Quality Score',
-      dataIndex: 'score',
-      key: 'score',
-      width: 150,
-      render: (score: number) => (
-        <Progress
-          percent={score}
-          size="small"
-          status={getScoreStatus(score)}
-          format={(percent) => `${percent}/100`}
-        />
-      )
-    },
-    {
-      title: 'Issues',
-      dataIndex: 'issues',
-      key: 'issues',
-      width: 80,
-      render: (issues: number) => (
-        <Tag color={issues === 0 ? 'success' : issues <= 2 ? 'warning' : 'error'}>
-          {issues}
-        </Tag>
-      )
-    },
-    {
-      title: 'Analyzed',
-      dataIndex: 'analyzedAt',
-      key: 'analyzedAt',
-      width: 120,
-      render: (date: string) => (
-        <Text type="secondary">
-          {new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </Text>
-      )
+  const getSeverityColor = (severity: string): string => {
+    switch (severity) {
+      case 'critical': return '#ff4d4f';
+      case 'major': return '#faad14';
+      case 'minor': return '#52c41a';
+      default: return '#666';
     }
-  ];
-
-  if (loading) {
-    return (
-      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '20px' }}>
-        <Card loading={loading} />
-      </div>
-    );
-  }
-
-  if (!dashboardData) {
-    return (
-      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '20px' }}>
-        <Alert
-          message="Dashboard Unavailable"
-          description="Unable to load dashboard data. Please try again later."
-          type="error"
-          showIcon
-        />
-      </div>
-    );
-  }
-
-  const totalAnalyses = dashboardData.recentAnalyses.length;
-  const averageScore = Math.round(
-    dashboardData.recentAnalyses.reduce((sum, item) => sum + item.score, 0) / totalAnalyses
-  );
-  const totalIssues = dashboardData.recentAnalyses.reduce((sum, item) => sum + item.issues, 0);
-  const highQualityCount = dashboardData.recentAnalyses.filter(item => item.score >= 80).length;
+  };
 
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto', padding: '20px' }}>
-      <Card
-        title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <DashboardOutlined />
-            <span>Requirements Quality Dashboard</span>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f5f5f5' }}>
+      {/* Header */}
+      <div style={{
+        backgroundColor: '#001529',
+        color: 'white',
+        padding: '16px 24px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <button
+            onClick={() => setDrawerOpen(true)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'white',
+              fontSize: '20px',
+              cursor: 'pointer',
+              padding: '8px'
+            }}
+          >
+            ☰
+          </button>
+          <div>
+            <h1 style={{ margin: 0, fontSize: '24px', color: 'white' }}>
+              Requirements Quality Analyzer
+            </h1>
+            <div style={{ fontSize: '14px', opacity: 0.8 }}>
+              AI-Powered Requirements Analysis Dashboard
+            </div>
           </div>
-        }
-      >
-        <Space direction="vertical" style={{ width: '100%' }} size="large">
-          {/* API Status Alert */}
-          {apiStatus !== 'healthy' && (
-            <Alert
-              message={`API Status: ${apiStatus === 'degraded' ? 'Degraded' : 'Unhealthy'}`}
-              description={
-                apiStatus === 'degraded' 
-                  ? 'The analysis service is running on fallback mode. Some features may be limited.'
-                  : 'The analysis service is currently unavailable. Please check your configuration.'
-              }
-              type={apiStatus === 'degraded' ? 'warning' : 'error'}
-              showIcon
-              closable
-            />
-          )}
+        </div>
 
-          {/* Key Metrics */}
-          <Row gutter={[16, 16]}>
-            <Col xs={12} sm={6}>
-              <Card size="small">
-                <Statistic
-                  title="Total Analyses"
-                  value={totalAnalyses}
-                  prefix={<FileTextOutlined />}
-                  valueStyle={{ color: '#1890ff' }}
-                />
-              </Card>
-            </Col>
-            <Col xs={12} sm={6}>
-              <Card size="small">
-                <Statistic
-                  title="Average Quality"
-                  value={averageScore}
-                  suffix="/100"
-                  valueStyle={{ color: getScoreColor(averageScore) }}
-                />
-              </Card>
-            </Col>
-            <Col xs={12} sm={6}>
-              <Card size="small">
-                <Statistic
-                  title="High Quality"
-                  value={highQualityCount}
-                  suffix={`/ ${totalAnalyses}`}
-                  prefix={<TrophyOutlined />}
-                  valueStyle={{ color: '#52c41a' }}
-                />
-              </Card>
-            </Col>
-            <Col xs={12} sm={6}>
-              <Card size="small">
-                <Statistic
-                  title="Total Issues"
-                  value={totalIssues}
-                  prefix={<ExclamationCircleOutlined />}
-                  valueStyle={{ color: totalIssues > 10 ? '#ff4d4f' : '#faad14' }}
-                />
-              </Card>
-            </Col>
-          </Row>
+        {/* API Status Indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px' }}>API Status:</span>
+            {apiStatus.loading ? (
+              <div style={{ 
+                display: 'inline-block', 
+                width: '16px', 
+                height: '16px',
+                border: '2px solid rgba(255,255,255,0.3)',
+                borderTop: '2px solid white',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite'
+              }}></div>
+            ) : (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '4px 12px',
+                borderRadius: '12px',
+                backgroundColor: apiStatus.status === 'healthy' ? '#52c41a' : 
+                              apiStatus.status === 'degraded' ? '#faad14' : '#ff4d4f',
+                fontSize: '12px',
+                fontWeight: 'bold'
+              }}>
+                <span>
+                  {apiStatus.status === 'healthy' ? 'ONLINE' : 
+                   apiStatus.status === 'degraded' ? 'DEGRADED' : 'OFFLINE'}
+                </span>
+                {apiStatus.status === 'healthy' ? 'Healthy' :
+                 apiStatus.status === 'degraded' ? 'Degraded' : 'Error'}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={checkApiStatus}
+            disabled={apiStatus.loading}
+            style={{
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: 'white',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              cursor: apiStatus.loading ? 'not-allowed' : 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
 
-          {/* Charts Row */}
-          <Row gutter={[16, 16]}>
-            <Col xs={24} lg={14}>
-              <Card size="small" title="Quality Trends" extra={<LineChartOutlined />}>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={dashboardData.qualityTrends}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="date" 
-                      tickFormatter={(value) => new Date(value).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                    />
-                    <YAxis domain={[0, 100]} />
-                    <RechartsTooltip 
-                      labelFormatter={(value) => new Date(value).toLocaleDateString()}
-                      formatter={(value, _name) => [
-                        _name === 'averageScore' ? `${value}/100` : value,
-                        _name === 'averageScore' ? 'Average Score' : 'Total Analyses'
-                      ]}
-                    />
-                    <Legend />
-                    <Line 
-                      type="monotone" 
-                      dataKey="averageScore" 
-                      stroke="#1890ff" 
-                      strokeWidth={3}
-                      name="Average Score"
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="totalAnalyses" 
-                      stroke="#52c41a" 
-                      strokeWidth={2}
-                      name="Total Analyses"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </Card>
-            </Col>
-            <Col xs={24} lg={10}>
-              <Card size="small" title="Issue Distribution" extra={<BarChartOutlined />}>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={dashboardData.issueDistribution}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ type, percentage }) => `${type}: ${percentage}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="count"
-                    >
-                      {dashboardData.issueDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={[
-                          '#ff4d4f', '#faad14', '#1890ff', '#52c41a', '#722ed1'
-                        ][index % 5]} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip formatter={(value, name) => [`${value} issues`, 'Count']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </Card>
-            </Col>
-          </Row>
+      {/* Message Toast */}
+      {message && (
+        <div style={{
+          position: 'fixed',
+          top: '80px',
+          right: '24px',
+          zIndex: 1000,
+          padding: '12px 16px',
+          backgroundColor: message.startsWith('error') ? '#ff4d4f' :
+                         message.startsWith('success') ? '#52c41a' : '#1890ff',
+          color: 'white',
+          borderRadius: '6px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+        }}>
+          {message.split(': ')[1]}
+        </div>
+      )}
 
-          {/* Recent Analyses and Issue Breakdown */}
-          <Row gutter={[16, 16]}>
-            <Col xs={24} lg={16}>
-              <Card size="small" title="Recent Analyses" extra={<ClockCircleOutlined />}>
-                <Table
-                  columns={recentAnalysesColumns}
-                  dataSource={dashboardData.recentAnalyses}
-                  rowKey="id"
-                  pagination={{ pageSize: 5, size: 'small' }}
-                  size="small"
-                />
-              </Card>
-            </Col>
-            <Col xs={24} lg={8}>
-              <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                <Card size="small" title="Severity Breakdown">
-                  <List
-                    dataSource={dashboardData.severityBreakdown}
-                    renderItem={(item) => (
-                      <List.Item>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div 
-                              style={{ 
-                                width: '12px', 
-                                height: '12px', 
-                                backgroundColor: item.color, 
-                                borderRadius: '50%' 
-                              }} 
-                            />
-                            <Text>{item.severity}</Text>
-                          </div>
-                          <Text strong>{item.count}</Text>
+      {/* Main Content */}
+      <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+        {/* Quick Actions */}
+        <div style={{
+          backgroundColor: 'white',
+          padding: '24px',
+          borderRadius: '8px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          marginBottom: '24px'
+        }}>
+          <h2 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            Quick Actions
+          </h2>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => {
+                setActiveTab('single');
+                setDrawerOpen(true);
+              }}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: '#1890ff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 'bold'
+              }}
+            >
+              Analyze New Requirement
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('batch');
+                setDrawerOpen(true);
+              }}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: '#52c41a',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 'bold'
+              }}
+            >
+              Batch Analysis
+            </button>
+            <button
+              onClick={checkApiStatus}
+              disabled={apiStatus.loading}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: '#faad14',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: apiStatus.loading ? 'not-allowed' : 'pointer',
+                fontSize: '14px',
+                fontWeight: 'bold'
+              }}
+            >
+              Refresh Dashboard
+            </button>
+          </div>
+        </div>
+
+        {/* Analysis Results */}
+        {analysisResult && (
+          <div style={{
+            backgroundColor: 'white',
+            padding: '24px',
+            borderRadius: '8px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+            marginBottom: '24px'
+          }}>
+            <h2 style={{ marginTop: 0 }}>Analysis Results</h2>
+            
+            {analysisResult.batchResults ? (
+              <div>
+                <h3>Batch Analysis Summary</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+                  {analysisResult.batchResults.map((result: AnalysisResponse, index: number) => (
+                    <div key={index} style={{
+                      border: '1px solid #d9d9d9',
+                      borderRadius: '6px',
+                      padding: '16px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <strong>Requirement {index + 1}</strong>
+                        <div style={{
+                          padding: '4px 8px',
+                          borderRadius: '12px',
+                          backgroundColor: getScoreColor(result.overallScore),
+                          color: 'white',
+                          fontSize: '12px',
+                          fontWeight: 'bold'
+                        }}>
+                          {result.overallScore}/100
                         </div>
-                      </List.Item>
+                      </div>
+                      <div style={{ fontSize: '14px', marginBottom: '8px' }}>
+                        Issues: {result.issues.length}
+                      </div>
+                      {result.issues.length > 0 && (
+                        <div style={{ fontSize: '12px' }}>
+                          {result.issues.map((issue: QualityIssue, i: number) => (
+                            <div key={i} style={{ 
+                              padding: '4px 8px',
+                              margin: '2px 0',
+                              backgroundColor: '#f5f5f5',
+                              borderRadius: '4px',
+                              borderLeft: `3px solid ${getSeverityColor(issue.severity)}`
+                            }}>
+                              <strong>{issue.type}</strong> ({issue.severity})
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px' }}>
+                <div style={{
+                  textAlign: 'center',
+                  padding: '24px',
+                  backgroundColor: '#f5f5f5',
+                  borderRadius: '8px'
+                }}>
+                  <div style={{
+                    fontSize: '48px',
+                    fontWeight: 'bold',
+                    color: getScoreColor(analysisResult.overallScore),
+                    marginBottom: '8px'
+                  }}>
+                    {analysisResult.overallScore}
+                  </div>
+                  <div style={{ fontSize: '18px', color: '#666' }}>Overall Quality Score</div>
+                  <div style={{
+                    width: '100%',
+                    height: '8px',
+                    backgroundColor: '#e5e5e5',
+                    borderRadius: '4px',
+                    marginTop: '16px',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: `${analysisResult.overallScore}%`,
+                      height: '100%',
+                      backgroundColor: getScoreColor(analysisResult.overallScore),
+                      transition: 'width 0.5s ease'
+                    }}></div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3>Issues Identified ({analysisResult.issues.length})</h3>
+                  {analysisResult.issues.length > 0 ? (
+                    <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                      {analysisResult.issues.map((issue: QualityIssue, index: number) => (
+                        <div key={index} style={{
+                          padding: '16px',
+                          border: '1px solid #d9d9d9',
+                          borderRadius: '6px',
+                          marginBottom: '12px',
+                          borderLeft: `4px solid ${getSeverityColor(issue.severity)}`
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <strong style={{ textTransform: 'capitalize' }}>{issue.type}</strong>
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              backgroundColor: getSeverityColor(issue.severity),
+                              color: 'white',
+                              fontSize: '12px',
+                              textTransform: 'uppercase'
+                            }}>
+                              {issue.severity}
+                            </span>
+                          </div>
+                          <p style={{ margin: '8px 0', fontSize: '14px' }}>{issue.description}</p>
+                          {issue.problematicText && (
+                            <div style={{ 
+                              backgroundColor: '#fff2f0', 
+                              padding: '8px', 
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              marginBottom: '8px'
+                            }}>
+                              <strong>Problematic text:</strong> "{issue.problematicText}"
+                            </div>
+                          )}
+                          {issue.suggestion && (
+                            <div style={{ 
+                              backgroundColor: '#f6ffed', 
+                              padding: '8px', 
+                              borderRadius: '4px',
+                              fontSize: '12px'
+                            }}>
+                              <strong>Suggestion:</strong> {issue.suggestion}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '40px',
+                      color: '#52c41a'
+                    }}>
+                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>✓</div>
+                      <div style={{ fontSize: '16px', fontWeight: 'bold' }}>No issues found!</div>
+                      <div style={{ fontSize: '14px' }}>This requirement meets quality standards.</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Enhancement Results */}
+        {enhancementResult && (
+          <div style={{
+            backgroundColor: 'white',
+            padding: '24px',
+            borderRadius: '8px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+          }}>
+            <h2 style={{ marginTop: 0 }}>Enhancement Suggestions</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '16px' }}>
+              {enhancementResult.enhancements.map((enhancement: Enhancement, index: number) => (
+                <div key={index} style={{
+                  border: index === enhancementResult.recommendedIndex ? '2px solid #1890ff' : '1px solid #d9d9d9',
+                  borderRadius: '8px',
+                  padding: '20px',
+                  position: 'relative'
+                }}>
+                  {index === enhancementResult.recommendedIndex && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '-10px',
+                      right: '16px',
+                      backgroundColor: '#1890ff',
+                      color: 'white',
+                      padding: '4px 12px',
+                      borderRadius: '12px',
+                      fontSize: '12px',
+                      fontWeight: 'bold'
+                    }}>
+                      RECOMMENDED
+                    </div>
+                  )}
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <h3 style={{ margin: 0 }}>Version {index + 1}</h3>
+                    <div style={{
+                      padding: '4px 8px',
+                      borderRadius: '12px',
+                      backgroundColor: getScoreColor(enhancement.qualityScore),
+                      color: 'white',
+                      fontSize: '12px',
+                      fontWeight: 'bold'
+                    }}>
+                      {enhancement.qualityScore}/100
+                    </div>
+                  </div>
+
+                  <div style={{
+                    backgroundColor: '#f5f5f5',
+                    padding: '16px',
+                    borderRadius: '6px',
+                    marginBottom: '16px',
+                    fontSize: '14px',
+                    lineHeight: '1.5'
+                  }}>
+                    {enhancement.text}
+                  </div>
+
+                  {enhancement.changes && enhancement.changes.length > 0 && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <strong style={{ fontSize: '12px', color: '#666' }}>CHANGES MADE:</strong>
+                      <ul style={{ margin: '4px 0', paddingLeft: '20px', fontSize: '12px' }}>
+                        {enhancement.changes.map((change: string, i: number) => (
+                          <li key={i}>{change}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {enhancement.improvements && enhancement.improvements.length > 0 && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <strong style={{ fontSize: '12px', color: '#666' }}>IMPROVEMENTS:</strong>
+                      <ul style={{ margin: '4px 0', paddingLeft: '20px', fontSize: '12px' }}>
+                        {enhancement.improvements.map((improvement: string, i: number) => (
+                          <li key={i}>{improvement}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {enhancement.rationale && (
+                    <div style={{
+                      backgroundColor: '#e6f7ff',
+                      padding: '12px',
+                      borderRadius: '4px',
+                      fontSize: '12px'
+                    }}>
+                      <strong>Rationale:</strong> {enhancement.rationale}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Side Drawer */}
+      {drawerOpen && (
+        <>
+          <div 
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              zIndex: 1000
+            }}
+            onClick={() => setDrawerOpen(false)}
+          />
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '400px',
+            height: '100vh',
+            backgroundColor: 'white',
+            zIndex: 1001,
+            boxShadow: '2px 0 8px rgba(0,0,0,0.15)',
+            overflow: 'auto'
+          }}>
+            <div style={{
+              padding: '20px',
+              borderBottom: '1px solid #d9d9d9',
+              backgroundColor: '#fafafa'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ margin: 0, fontSize: '18px' }}>Analysis Tools</h2>
+                <button
+                  onClick={() => setDrawerOpen(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '20px',
+                    cursor: 'pointer',
+                    padding: '4px'
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: '20px' }}>
+              {/* Tab Navigation */}
+              <div style={{ display: 'flex', marginBottom: '20px', borderBottom: '1px solid #d9d9d9' }}>
+                <button
+                  onClick={() => setActiveTab('single')}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    border: 'none',
+                    backgroundColor: activeTab === 'single' ? '#1890ff' : 'transparent',
+                    color: activeTab === 'single' ? 'white' : '#666',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: activeTab === 'single' ? 'bold' : 'normal'
+                  }}
+                >
+                  Single Analysis
+                </button>
+                <button
+                  onClick={() => setActiveTab('batch')}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    border: 'none',
+                    backgroundColor: activeTab === 'batch' ? '#1890ff' : 'transparent',
+                    color: activeTab === 'batch' ? 'white' : '#666',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: activeTab === 'batch' ? 'bold' : 'normal'
+                  }}
+                >
+                  Batch Analysis
+                </button>
+              </div>
+
+              {activeTab === 'single' ? (
+                <div>
+                  <h3 style={{ marginBottom: '16px' }}>Single Requirement Analysis</h3>
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+                      Enter Your Requirement:
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={requirement}
+                      onChange={(e) => setRequirement(e.target.value)}
+                      placeholder="Example: The system should be user-friendly and fast..."
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        border: '1px solid #d9d9d9',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        resize: 'vertical',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <button
+                      onClick={handleAnalyze}
+                      disabled={loading || !requirement.trim()}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        backgroundColor: loading || !requirement.trim() ? '#d9d9d9' : '#1890ff',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: loading || !requirement.trim() ? 'not-allowed' : 'pointer',
+                        fontSize: '14px',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      {loading ? 'Analyzing...' : 'Analyze Quality'}
+                    </button>
+                    
+                    {analysisResult && !analysisResult.batchResults && (
+                      <button
+                        onClick={handleEnhance}
+                        disabled={loading}
+                        style={{
+                          width: '100%',
+                          padding: '12px',
+                          backgroundColor: loading ? '#d9d9d9' : '#52c41a',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: loading ? 'not-allowed' : 'pointer',
+                          fontSize: '14px',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        {loading ? 'Enhancing...' : 'Generate Enhancements'}
+                      </button>
                     )}
-                  />
-                </Card>
-                
-                <Card size="small" title="Quick Actions">
-                  <Space direction="vertical" style={{ width: '100%' }}>
-                    <Button type="primary" block onClick={() => window.location.href = '#/analyze'}>
-                      Analyze New Requirement
-                    </Button>
-                    <Button block onClick={() => window.location.href = '#/batch'}>
-                      Batch Analysis
-                    </Button>
-                    <Button block onClick={loadDashboardData}>
-                      Refresh Dashboard
-                    </Button>
-                  </Space>
-                </Card>
-              </Space>
-            </Col>
-          </Row>
-        </Space>
-      </Card>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <h3 style={{ marginBottom: '16px' }}>Batch Analysis</h3>
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+                      Enter Requirements (one per line):
+                    </label>
+                    <textarea
+                      rows={6}
+                      value={batchRequirements}
+                      onChange={(e) => setBatchRequirements(e.target.value)}
+                      placeholder={`The system shall respond within 2 seconds
+The user interface should be intuitive
+Data must be backed up daily
+The application should handle 1000 concurrent users`}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        border: '1px solid #d9d9d9',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        resize: 'vertical',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <button
+                    onClick={handleBatchAnalyze}
+                    disabled={loading || !batchRequirements.trim()}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      backgroundColor: loading || !batchRequirements.trim() ? '#d9d9d9' : '#52c41a',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: loading || !batchRequirements.trim() ? 'not-allowed' : 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    {loading ? 'Analyzing...' : 'Analyze Batch'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* CSS Animation */}
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };
