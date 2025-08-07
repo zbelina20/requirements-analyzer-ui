@@ -57,7 +57,7 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://localhost:5000",
+  "proxy": "https://localhost:7277",
   "homepage": ".",
   "keywords": [
     "requirements-engineering",
