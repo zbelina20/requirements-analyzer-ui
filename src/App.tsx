@@ -1,12 +1,12 @@
-// src/App.tsx - Updated to use the Dashboard component
+// src/App.tsx - Updated to use ProjectDashboard
 import React from 'react';
-import Dashboard from './components/Dashboard';
+import ProjectDashboard from './components/ProjectDashboard';
 import './App.css'; // Keep your existing CSS if you have it
 
 function App() {
   return (
     <div className="App">
-      <Dashboard />
+      <ProjectDashboard />
     </div>
   );
 }
