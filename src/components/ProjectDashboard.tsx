@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 interface Project {
   id: number;
@@ -69,12 +69,20 @@ const ProjectDashboard: React.FC = () => {
   const [requirements, setRequirements] = useState<ProjectRequirement[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  
+  // Modal states
   const [showCreateProject, setShowCreateProject] = useState(false);
+  const [showEditProject, setShowEditProject] = useState(false);
   const [showAddRequirement, setShowAddRequirement] = useState(false);
+  const [showEditRequirement, setShowEditRequirement] = useState(false);
   const [showRequirementDetails, setShowRequirementDetails] = useState(false);
-  const [selectedRequirement, setSelectedRequirement] = useState<ProjectRequirement | null>(null);
+  
+  // Form states
   const [newProject, setNewProject] = useState<CreateProjectRequest>({ name: '', description: '' });
+  const [editProject, setEditProject] = useState<CreateProjectRequest>({ name: '', description: '' });
   const [newRequirement, setNewRequirement] = useState<CreateRequirementRequest>({ text: '', title: '' });
+  const [editRequirement, setEditRequirement] = useState<CreateRequirementRequest>({ text: '', title: '' });
+  const [selectedRequirement, setSelectedRequirement] = useState<ProjectRequirement | null>(null);
 
   const apiRequest = async (endpoint: string, options?: RequestInit) => {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -93,34 +101,35 @@ const ProjectDashboard: React.FC = () => {
     setTimeout(() => setMessage(''), 5000);
   };
 
-  const loadProjects = async () => {
+  const loadProjects = useCallback(async () => {
     try {
       const projectList = await apiRequest('/projects');
       setProjects(projectList);
     } catch (error) {
       showMessage('Failed to load projects', 'error');
     }
-  };
+  }, []);
 
-  const loadRequirements = async (projectId: number) => {
+  const loadRequirements = useCallback(async (projectId: number) => {
     try {
       const reqs = await apiRequest(`/projects/${projectId}/requirements`);
       setRequirements(reqs);
     } catch (error) {
       showMessage('Failed to load requirements', 'error');
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadProjects();
-  }, []);
+  }, [loadProjects]);
 
   useEffect(() => {
     if (selectedProject) {
       loadRequirements(selectedProject.id);
     }
-  }, [selectedProject]);
+  }, [selectedProject, loadRequirements]);
 
+  // Project CRUD operations
   const handleCreateProject = async () => {
     if (!newProject.name.trim()) {
       showMessage('Project name is required', 'error');
@@ -140,6 +149,43 @@ const ProjectDashboard: React.FC = () => {
     }
   };
 
+  const handleEditProject = async () => {
+    if (!selectedProject || !editProject.name.trim()) {
+      showMessage('Project name is required', 'error');
+      return;
+    }
+    try {
+      const updatedProject = await apiRequest(`/projects/${selectedProject.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(editProject),
+      });
+      setSelectedProject(updatedProject);
+      setShowEditProject(false);
+      showMessage('Project updated successfully', 'success');
+      loadProjects();
+    } catch (error) {
+      showMessage('Failed to update project', 'error');
+    }
+  };
+
+  const handleDeleteProject = async (project: Project) => {
+    if (!window.confirm(`Are you sure you want to delete "${project.name}"? This will also delete all requirements in this project.`)) {
+      return;
+    }
+    try {
+      await apiRequest(`/projects/${project.id}`, { method: 'DELETE' });
+      showMessage('Project deleted successfully', 'success');
+      if (selectedProject?.id === project.id) {
+        setSelectedProject(null);
+        setRequirements([]);
+      }
+      loadProjects();
+    } catch (error) {
+      showMessage('Failed to delete project', 'error');
+    }
+  };
+
+  // Requirement CRUD operations
   const handleAddRequirement = async () => {
     if (!selectedProject || !newRequirement.text.trim()) {
       showMessage('Requirement text is required', 'error');
@@ -160,6 +206,49 @@ const ProjectDashboard: React.FC = () => {
     }
   };
 
+  const handleEditRequirement = async () => {
+    if (!selectedRequirement || !editRequirement.text.trim()) {
+      showMessage('Requirement text is required', 'error');
+      return;
+    }
+    try {
+      const updatedRequirement = await apiRequest(
+        `/projects/${selectedRequirement.projectId}/requirements/${selectedRequirement.id}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify(editRequirement),
+        }
+      );
+      setSelectedRequirement(updatedRequirement);
+      setShowEditRequirement(false);
+      showMessage('Requirement updated successfully', 'success');
+      loadRequirements(selectedRequirement.projectId);
+      loadProjects();
+    } catch (error) {
+      showMessage('Failed to update requirement', 'error');
+    }
+  };
+
+  const handleDeleteRequirement = async (requirement: ProjectRequirement) => {
+    if (!window.confirm(`Are you sure you want to delete this requirement?`)) {
+      return;
+    }
+    try {
+      await apiRequest(`/projects/${requirement.projectId}/requirements/${requirement.id}`, {
+        method: 'DELETE'
+      });
+      showMessage('Requirement deleted successfully', 'success');
+      if (selectedRequirement?.id === requirement.id) {
+        setSelectedRequirement(null);
+        setShowRequirementDetails(false);
+      }
+      loadRequirements(requirement.projectId);
+      loadProjects();
+    } catch (error) {
+      showMessage('Failed to delete requirement', 'error');
+    }
+  };
+
   const handleAnalyzeRequirement = async (requirement: ProjectRequirement) => {
     setLoading(true);
     try {
@@ -167,13 +256,23 @@ const ProjectDashboard: React.FC = () => {
         method: 'POST',
       });
       
-      // Update the requirement with analysis data
+      const updatedRequirement = { 
+        ...requirement, 
+        status: 'Analyzed' as const, 
+        qualityScore: analysisResult.overallScore, 
+        analysis: analysisResult 
+      };
+      
+      // Update the requirements list
       const updatedRequirements = requirements.map(req => 
-        req.id === requirement.id 
-          ? { ...req, status: 'Analyzed' as const, qualityScore: analysisResult.overallScore, analysis: analysisResult }
-          : req
+        req.id === requirement.id ? updatedRequirement : req
       );
       setRequirements(updatedRequirements);
+      
+      // Update selected requirement if it's the same one
+      if (selectedRequirement?.id === requirement.id) {
+        setSelectedRequirement(updatedRequirement);
+      }
       
       showMessage('Requirement analyzed successfully', 'success');
       loadRequirements(requirement.projectId);
@@ -197,21 +296,21 @@ const ProjectDashboard: React.FC = () => {
         method: 'POST',
       });
       
-      // Update the requirement with enhancement data
+      const updatedRequirement = {
+        ...requirement,
+        status: 'Enhanced' as const,
+        enhancements: enhancementResult
+      };
+      
+      // Update the requirements list
       const updatedRequirements = requirements.map(req => 
-        req.id === requirement.id 
-          ? { ...req, status: 'Enhanced' as const, enhancements: enhancementResult }
-          : req
+        req.id === requirement.id ? updatedRequirement : req
       );
       setRequirements(updatedRequirements);
       
-      // Update selectedRequirement if it's the same one
+      // Update selected requirement if it's the same one
       if (selectedRequirement?.id === requirement.id) {
-        setSelectedRequirement({
-          ...selectedRequirement,
-          status: 'Enhanced' as const,
-          enhancements: enhancementResult
-        });
+        setSelectedRequirement(updatedRequirement);
       }
       
       showMessage('Enhancement generated successfully', 'success');
@@ -230,7 +329,6 @@ const ProjectDashboard: React.FC = () => {
     setLoading(true);
 
     try {
-      // Update the requirement text with the enhanced version
       const updateData = {
         text: selectedEnhancement.text,
         title: selectedRequirement.title
@@ -241,7 +339,6 @@ const ProjectDashboard: React.FC = () => {
         body: JSON.stringify(updateData),
       });
 
-      // Update local state with new requirement text and score
       const updatedRequirement = {
         ...selectedRequirement,
         text: selectedEnhancement.text,
@@ -249,18 +346,15 @@ const ProjectDashboard: React.FC = () => {
         status: 'Enhanced' as const
       };
 
-      // Update requirements list
       const updatedRequirements = requirements.map(req => 
         req.id === selectedRequirement.id ? updatedRequirement : req
       );
       setRequirements(updatedRequirements);
-
-      // Update selected requirement
       setSelectedRequirement(updatedRequirement);
 
       showMessage(`Enhancement ${enhancementIndex + 1} applied successfully!`, 'success');
       loadRequirements(selectedRequirement.projectId);
-      loadProjects(); // Refresh to update project stats
+      loadProjects();
     } catch (error) {
       showMessage('Failed to apply enhancement', 'error');
     } finally {
@@ -268,6 +362,7 @@ const ProjectDashboard: React.FC = () => {
     }
   };
 
+  // Helper functions
   const getScoreColor = (score: number): string => {
     if (score >= 80) return '#52c41a';
     if (score >= 60) return '#faad14';
@@ -281,6 +376,17 @@ const ProjectDashboard: React.FC = () => {
       case 'Failed': return '#f5222d';
       default: return '#d9d9d9';
     }
+  };
+
+  const openEditProject = (project: Project) => {
+    setEditProject({ name: project.name, description: project.description || '' });
+    setShowEditProject(true);
+  };
+
+  const openEditRequirement = (requirement: ProjectRequirement) => {
+    setEditRequirement({ text: requirement.text, title: requirement.title || '' });
+    setSelectedRequirement(requirement);
+    setShowEditRequirement(true);
   };
 
   return (
@@ -352,44 +458,92 @@ const ProjectDashboard: React.FC = () => {
               {projects.map((project) => (
                 <div
                   key={project.id}
-                  onClick={() => setSelectedProject(project)}
                   style={{
                     padding: '12px',
                     border: `1px solid ${selectedProject?.id === project.id ? '#1890ff' : '#d9d9d9'}`,
                     borderRadius: '6px',
                     cursor: 'pointer',
                     backgroundColor: selectedProject?.id === project.id ? '#e6f7ff' : 'white',
-                    transition: 'all 0.2s ease'
+                    transition: 'all 0.2s ease',
+                    position: 'relative'
                   }}
                 >
-                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>{project.name}</div>
-                  <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
-                    {project.description || 'No description'}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#888' }}>
-                    <span>{project.requirementCount} requirements</span>
-                    <span>{project.analyzedCount} analyzed</span>
-                  </div>
-                  {project.averageQualityScore && (
-                    <div style={{ marginTop: '8px' }}>
-                      <div style={{
-                        width: '100%',
-                        height: '4px',
-                        backgroundColor: '#f0f0f0',
-                        borderRadius: '2px',
-                        overflow: 'hidden'
-                      }}>
-                        <div style={{
-                          width: `${project.averageQualityScore}%`,
-                          height: '100%',
-                          backgroundColor: getScoreColor(project.averageQualityScore)
-                        }}></div>
-                      </div>
-                      <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>
-                        Avg. Quality: {Math.round(project.averageQualityScore)}%
-                      </div>
+                  <div onClick={() => setSelectedProject(project)}>
+                    <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>{project.name}</div>
+                    <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
+                      {project.description || 'No description'}
                     </div>
-                  )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#888' }}>
+                      <span>{project.requirementCount} requirements</span>
+                      <span>{project.analyzedCount} analyzed</span>
+                    </div>
+                    {project.averageQualityScore && (
+                      <div style={{ marginTop: '8px' }}>
+                        <div style={{
+                          width: '100%',
+                          height: '4px',
+                          backgroundColor: '#f0f0f0',
+                          borderRadius: '2px',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            width: `${project.averageQualityScore}%`,
+                            height: '100%',
+                            backgroundColor: getScoreColor(project.averageQualityScore)
+                          }}></div>
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>
+                          Avg. Quality: {Math.round(project.averageQualityScore)}%
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Edit and Delete buttons */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '8px',
+                    right: '8px',
+                    display: 'flex',
+                    gap: '4px'
+                  }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEditProject(project);
+                      }}
+                      style={{
+                        padding: '4px 6px',
+                        backgroundColor: '#faad14',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        fontSize: '10px'
+                      }}
+                      title="Edit project"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteProject(project);
+                      }}
+                      style={{
+                        padding: '4px 6px',
+                        backgroundColor: '#f5222d',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        fontSize: '10px'
+                      }}
+                      title="Delete project"
+                    >
+                      🗑️
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -454,7 +608,7 @@ const ProjectDashboard: React.FC = () => {
                 
                 {requirements.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '40px 0', color: '#666' }}>
-                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>📝</div>
+                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>📄</div>
                     <div>No requirements yet</div>
                     <div style={{ fontSize: '14px', marginBottom: '16px' }}>Add your first requirement to get started</div>
                     <button
@@ -495,7 +649,7 @@ const ProjectDashboard: React.FC = () => {
                               fontSize: '14px',
                               lineHeight: '1.5'
                             }}>
-                              {requirement.text}
+                              {requirement.text.length > 200 ? `${requirement.text.substring(0, 200)}...` : requirement.text}
                             </p>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: '16px' }}>
@@ -523,6 +677,61 @@ const ProjectDashboard: React.FC = () => {
                             )}
                           </div>
                         </div>
+
+                        {/* Analysis Results Preview */}
+                        {requirement.analysis && requirement.analysis.issues && requirement.analysis.issues.length > 0 && (
+                          <div style={{ 
+                            marginBottom: '12px',
+                            padding: '12px', 
+                            backgroundColor: '#f8f9fa', 
+                            borderRadius: '6px',
+                            borderLeft: '4px solid #1890ff'
+                          }}>
+                            <h5 style={{ margin: '0 0 8px 0', color: '#1890ff', fontSize: '13px' }}>Analysis Results:</h5>
+                            <div style={{ fontSize: '12px' }}>
+                              <div style={{ marginBottom: '6px' }}>
+                                <strong>Issues Found: </strong>{requirement.analysis.issues.length}
+                              </div>
+                              {requirement.analysis.issues.slice(0, 2).map((issue: any, index: number) => (
+                                <div key={index} style={{
+                                  padding: '6px',
+                                  marginBottom: '4px',
+                                  backgroundColor: 'white',
+                                  borderRadius: '4px',
+                                  borderLeft: `3px solid ${issue.severity === 'critical' ? '#f5222d' : 
+                                                          issue.severity === 'major' ? '#faad14' : '#52c41a'}`
+                                }}>
+                                  <div style={{ fontWeight: 'bold', fontSize: '11px', textTransform: 'capitalize' }}>
+                                    {issue.type} ({issue.severity})
+                                  </div>
+                                  <div style={{ fontSize: '11px', color: '#666' }}>
+                                    {issue.description.substring(0, 80)}...
+                                  </div>
+                                </div>
+                              ))}
+                              {requirement.analysis.issues.length > 2 && (
+                                <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
+                                  +{requirement.analysis.issues.length - 2} more issues
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Success message when no issues */}
+                        {requirement.analysis && requirement.analysis.issues && requirement.analysis.issues.length === 0 && (
+                          <div style={{ 
+                            marginBottom: '12px',
+                            padding: '12px', 
+                            backgroundColor: '#f6ffed', 
+                            borderRadius: '6px',
+                            borderLeft: '4px solid #52c41a'
+                          }}>
+                            <div style={{ color: '#52c41a', fontSize: '12px', fontWeight: 'bold' }}>
+                              ✓ No quality issues found - This requirement meets high quality standards!
+                            </div>
+                          </div>
+                        )}
                         
                         <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                           <button
@@ -540,6 +749,21 @@ const ProjectDashboard: React.FC = () => {
                             }}
                           >
                             View Details
+                          </button>
+                          
+                          <button
+                            onClick={() => openEditRequirement(requirement)}
+                            style={{
+                              padding: '6px 12px',
+                              backgroundColor: '#faad14',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '12px'
+                            }}
+                          >
+                            Edit
                           </button>
                           
                           {requirement.status === 'Draft' && (
@@ -577,6 +801,21 @@ const ProjectDashboard: React.FC = () => {
                               {loading ? 'Enhancing...' : 'Enhance'}
                             </button>
                           )}
+                          
+                          <button
+                            onClick={() => handleDeleteRequirement(requirement)}
+                            style={{
+                              padding: '6px 12px',
+                              backgroundColor: '#f5222d',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '12px'
+                            }}
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -718,6 +957,107 @@ const ProjectDashboard: React.FC = () => {
         </>
       )}
 
+      {/* Edit Project Modal */}
+      {showEditProject && (
+        <>
+          <div 
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              zIndex: 1000
+            }}
+            onClick={() => setShowEditProject(false)}
+          />
+          <div style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: 'white',
+            padding: '24px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex: 1001,
+            width: '400px'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Edit Project</h3>
+            
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+                Project Name *
+              </label>
+              <input
+                type="text"
+                value={editProject.name}
+                onChange={(e) => setEditProject({ ...editProject, name: e.target.value })}
+                placeholder="Enter project name..."
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+            
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+                Description
+              </label>
+              <textarea
+                rows={3}
+                value={editProject.description}
+                onChange={(e) => setEditProject({ ...editProject, description: e.target.value })}
+                placeholder="Describe your project..."
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+            
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowEditProject(false)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#f0f0f0',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditProject}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#faad14',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Update Project
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Add Requirement Modal */}
       {showAddRequirement && (
         <>
@@ -786,6 +1126,9 @@ const ProjectDashboard: React.FC = () => {
                   boxSizing: 'border-box'
                 }}
               />
+              <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                {newRequirement.text.length}/2000 characters
+              </div>
             </div>
             
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
@@ -813,6 +1156,117 @@ const ProjectDashboard: React.FC = () => {
                 }}
               >
                 Add Requirement
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Edit Requirement Modal */}
+      {showEditRequirement && (
+        <>
+          <div 
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              zIndex: 1000
+            }}
+            onClick={() => setShowEditRequirement(false)}
+          />
+          <div style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: 'white',
+            padding: '24px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex: 1001,
+            width: '500px'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Edit Requirement</h3>
+            
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+                Title
+              </label>
+              <input
+                type="text"
+                value={editRequirement.title}
+                onChange={(e) => setEditRequirement({ ...editRequirement, title: e.target.value })}
+                placeholder="Brief title for the requirement..."
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+            
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+                Requirement Text *
+              </label>
+              <textarea
+                rows={4}
+                value={editRequirement.text}
+                onChange={(e) => setEditRequirement({ ...editRequirement, text: e.target.value })}
+                placeholder="The system shall..."
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
+                }}
+              />
+              <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                {editRequirement.text.length}/2000 characters
+              </div>
+            </div>
+            
+            <div style={{ backgroundColor: '#fff7e6', padding: '12px', borderRadius: '4px', marginBottom: '16px' }}>
+              <div style={{ fontSize: '12px', color: '#d48806', fontWeight: 'bold' }}>⚠️ Note:</div>
+              <div style={{ fontSize: '12px', color: '#d48806' }}>
+                Editing the requirement text will reset its analysis status to "Draft". You'll need to analyze it again.
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowEditRequirement(false)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#f0f0f0',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditRequirement}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#faad14',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Update Requirement
               </button>
             </div>
           </div>
@@ -917,6 +1371,21 @@ const ProjectDashboard: React.FC = () => {
 
             {/* Action Buttons */}
             <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+              <button
+                onClick={() => openEditRequirement(selectedRequirement)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#faad14',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+              >
+                Edit Requirement
+              </button>
+              
               {selectedRequirement.status === 'Draft' && (
                 <button
                   onClick={() => {
@@ -1118,7 +1587,6 @@ const ProjectDashboard: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Apply Enhancement Button */}
                       <div style={{ textAlign: 'right' }}>
                         <button
                           onClick={() => handleApplyEnhancement(index)}
