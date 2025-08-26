@@ -487,7 +487,7 @@ const ProjectDashboard: React.FC = () => {
         padding: '16px 24px',
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
-        <h1 style={{ margin: 0, fontSize: '24px' }}>Requirements Quality Analyzer</h1>
+        <h1 style={{ margin: 0, fontSize: '24px' }}>RE Lifecycle Assistant</h1>
         <div style={{ fontSize: '14px', opacity: 0.8 }}>Project-Based Requirements Management</div>
       </div>
 
