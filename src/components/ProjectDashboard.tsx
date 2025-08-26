@@ -34,6 +34,19 @@ interface CreateRequirementRequest {
   title?: string;
 }
 
+interface GenerateRequirementsRequest {
+  userStory: string;
+  projectContext?: string;
+}
+
+interface GeneratedRequirement {
+  type: 'functional' | 'non-functional' | 'validation' | 'security' | 'usability';
+  title: string;
+  text: string;
+  priority: 'high' | 'medium' | 'low';
+  rationale: string;
+}
+
 interface QualityIssue {
   type: string;
   severity: 'critical' | 'major' | 'minor';
@@ -74,14 +87,18 @@ const ProjectDashboard: React.FC = () => {
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [showEditProject, setShowEditProject] = useState(false);
   const [showAddRequirement, setShowAddRequirement] = useState(false);
+  const [showGenerateRequirements, setShowGenerateRequirements] = useState(false);
   const [showEditRequirement, setShowEditRequirement] = useState(false);
   const [showRequirementDetails, setShowRequirementDetails] = useState(false);
+  const [showGenerationResults, setShowGenerationResults] = useState(false);
   
   // Form states
   const [newProject, setNewProject] = useState<CreateProjectRequest>({ name: '', description: '' });
   const [editProject, setEditProject] = useState<CreateProjectRequest>({ name: '', description: '' });
   const [newRequirement, setNewRequirement] = useState<CreateRequirementRequest>({ text: '', title: '' });
   const [editRequirement, setEditRequirement] = useState<CreateRequirementRequest>({ text: '', title: '' });
+  const [generateRequest, setGenerateRequest] = useState<GenerateRequirementsRequest>({ userStory: '', projectContext: '' });
+  const [generatedRequirements, setGeneratedRequirements] = useState<GeneratedRequirement[]>([]);
   const [selectedRequirement, setSelectedRequirement] = useState<ProjectRequirement | null>(null);
 
   const apiRequest = async (endpoint: string, options?: RequestInit) => {
@@ -185,6 +202,82 @@ const ProjectDashboard: React.FC = () => {
     }
   };
 
+  // Requirement Generation
+  const handleGenerateRequirements = async () => {
+    if (!selectedProject || !generateRequest.userStory.trim()) {
+      showMessage('User story is required', 'error');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const generationResult = await apiRequest(`/projects/${selectedProject.id}/requirements/generate`, {
+        method: 'POST',
+        body: JSON.stringify({
+          userStory: generateRequest.userStory,
+          projectContext: generateRequest.projectContext || selectedProject.description
+        }),
+      });
+      
+      setGeneratedRequirements(generationResult.requirements || []);
+      setShowGenerateRequirements(false);
+      setShowGenerationResults(true);
+      showMessage(`Generated ${generationResult.requirements?.length || 0} requirements successfully`, 'success');
+    } catch (error) {
+      showMessage('Failed to generate requirements', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddGeneratedRequirement = async (generatedReq: GeneratedRequirement) => {
+    if (!selectedProject) return;
+    
+    try {
+      await apiRequest(`/projects/${selectedProject.id}/requirements`, {
+        method: 'POST',
+        body: JSON.stringify({
+          text: generatedReq.text,
+          title: generatedReq.title
+        }),
+      });
+      
+      showMessage(`Added "${generatedReq.title}" to project`, 'success');
+      loadRequirements(selectedProject.id);
+      loadProjects();
+    } catch (error) {
+      showMessage('Failed to add generated requirement', 'error');
+    }
+  };
+
+  const handleAddAllGeneratedRequirements = async () => {
+    if (!selectedProject || generatedRequirements.length === 0) return;
+    
+    setLoading(true);
+    try {
+      const promises = generatedRequirements.map(req => 
+        apiRequest(`/projects/${selectedProject.id}/requirements`, {
+          method: 'POST',
+          body: JSON.stringify({
+            text: req.text,
+            title: req.title
+          }),
+        })
+      );
+      
+      await Promise.all(promises);
+      setShowGenerationResults(false);
+      setGeneratedRequirements([]);
+      showMessage(`Added all ${generatedRequirements.length} generated requirements to project`, 'success');
+      loadRequirements(selectedProject.id);
+      loadProjects();
+    } catch (error) {
+      showMessage('Failed to add some generated requirements', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Requirement CRUD operations
   const handleAddRequirement = async () => {
     if (!selectedProject || !newRequirement.text.trim()) {
@@ -263,13 +356,11 @@ const ProjectDashboard: React.FC = () => {
         analysis: analysisResult 
       };
       
-      // Update the requirements list
-      const updatedRequirements = requirements.map(req => 
+      const updatedRequirements = requirements.map((req: ProjectRequirement) => 
         req.id === requirement.id ? updatedRequirement : req
       );
       setRequirements(updatedRequirements);
       
-      // Update selected requirement if it's the same one
       if (selectedRequirement?.id === requirement.id) {
         setSelectedRequirement(updatedRequirement);
       }
@@ -302,13 +393,11 @@ const ProjectDashboard: React.FC = () => {
         enhancements: enhancementResult
       };
       
-      // Update the requirements list
-      const updatedRequirements = requirements.map(req => 
+      const updatedRequirements = requirements.map((req: ProjectRequirement) => 
         req.id === requirement.id ? updatedRequirement : req
       );
       setRequirements(updatedRequirements);
       
-      // Update selected requirement if it's the same one
       if (selectedRequirement?.id === requirement.id) {
         setSelectedRequirement(updatedRequirement);
       }
@@ -346,7 +435,7 @@ const ProjectDashboard: React.FC = () => {
         status: 'Enhanced' as const
       };
 
-      const updatedRequirements = requirements.map(req => 
+      const updatedRequirements = requirements.map((req: ProjectRequirement) => 
         req.id === selectedRequirement.id ? updatedRequirement : req
       );
       setRequirements(updatedRequirements);
@@ -580,20 +669,36 @@ const ProjectDashboard: React.FC = () => {
                       )}
                     </div>
                   </div>
-                  <button
-                    onClick={() => setShowAddRequirement(true)}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#52c41a',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '14px'
-                    }}
-                  >
-                    Add Requirement
-                  </button>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button
+                      onClick={() => setShowGenerateRequirements(true)}
+                      style={{
+                        padding: '8px 16px',
+                        backgroundColor: '#722ed1',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '14px'
+                      }}
+                    >
+                      Generate from Story
+                    </button>
+                    <button
+                      onClick={() => setShowAddRequirement(true)}
+                      style={{
+                        padding: '8px 16px',
+                        backgroundColor: '#52c41a',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '14px'
+                      }}
+                    >
+                      Add Requirement
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -610,20 +715,35 @@ const ProjectDashboard: React.FC = () => {
                   <div style={{ textAlign: 'center', padding: '40px 0', color: '#666' }}>
                     <div style={{ fontSize: '48px', marginBottom: '16px' }}>📄</div>
                     <div>No requirements yet</div>
-                    <div style={{ fontSize: '14px', marginBottom: '16px' }}>Add your first requirement to get started</div>
-                    <button
-                      onClick={() => setShowAddRequirement(true)}
-                      style={{
-                        padding: '8px 16px',
-                        backgroundColor: '#52c41a',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Add Requirement
-                    </button>
+                    <div style={{ fontSize: '14px', marginBottom: '16px' }}>Add your first requirement or generate from a user story</div>
+                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                      <button
+                        onClick={() => setShowGenerateRequirements(true)}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: '#722ed1',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Generate from Story
+                      </button>
+                      <button
+                        onClick={() => setShowAddRequirement(true)}
+                        style={{
+                          padding: '8px 16px',
+                          backgroundColor: '#52c41a',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Add Requirement
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -856,6 +976,7 @@ const ProjectDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Modals */}
       {/* Create Project Modal */}
       {showCreateProject && (
         <>
@@ -953,6 +1074,276 @@ const ProjectDashboard: React.FC = () => {
                 Create Project
               </button>
             </div>
+          </div>
+        </>
+      )}
+
+      {/* Generate Requirements Modal */}
+      {showGenerateRequirements && (
+        <>
+          <div 
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              zIndex: 1000
+            }}
+            onClick={() => setShowGenerateRequirements(false)}
+          />
+          <div style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: 'white',
+            padding: '24px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex: 1001,
+            width: '600px'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Generate Requirements from User Story</h3>
+            
+            <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#f6ffed', borderRadius: '6px', borderLeft: '4px solid #52c41a' }}>
+              <div style={{ fontSize: '13px', color: '#52c41a', fontWeight: 'bold', marginBottom: '4px' }}>How it works:</div>
+              <div style={{ fontSize: '13px', color: '#666' }}>
+                Provide a high-level user story or goal, and AI will generate detailed functional, non-functional, and validation requirements.
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+                User Story / High-Level Goal *
+              </label>
+              <textarea
+                rows={4}
+                value={generateRequest.userStory}
+                onChange={(e) => setGenerateRequest({ ...generateRequest, userStory: e.target.value })}
+                placeholder="Example: As a user, I need to log in to my account using email and password..."
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
+                }}
+              />
+              <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                {generateRequest.userStory.length}/1000 characters
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+                Additional Context (Optional)
+              </label>
+              <textarea
+                rows={3}
+                value={generateRequest.projectContext}
+                onChange={(e) => setGenerateRequest({ ...generateRequest, projectContext: e.target.value })}
+                placeholder="Additional context about your project, constraints, or specific requirements..."
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
+                }}
+              />
+              <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                Current project: {selectedProject?.name} - {selectedProject?.description || 'No description'}
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowGenerateRequirements(false)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#f0f0f0',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleGenerateRequirements}
+                disabled={loading}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: loading ? '#d9d9d9' : '#722ed1',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: loading ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {loading ? 'Generating...' : 'Generate Requirements'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Generated Requirements Results Modal */}
+      {showGenerationResults && (
+        <>
+          <div 
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              zIndex: 1000
+            }}
+            onClick={() => setShowGenerationResults(false)}
+          />
+          <div style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: 'white',
+            padding: '24px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex: 1001,
+            width: '800px',
+            maxHeight: '80vh',
+            overflow: 'auto'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0 }}>Generated Requirements ({generatedRequirements.length})</h3>
+              <button
+                onClick={() => setShowGenerationResults(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '20px',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            
+            {generatedRequirements.length > 0 && (
+              <div style={{ marginBottom: '20px', textAlign: 'right' }}>
+                <button
+                  onClick={handleAddAllGeneratedRequirements}
+                  disabled={loading}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: loading ? '#d9d9d9' : '#52c41a',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  {loading ? 'Adding All...' : 'Add All Requirements'}
+                </button>
+              </div>
+            )}
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {generatedRequirements.map((genReq, index) => (
+                <div key={index} style={{
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '8px',
+                  padding: '16px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                        <h5 style={{ margin: 0 }}>{genReq.title}</h5>
+                        <span style={{
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          backgroundColor: genReq.type === 'functional' ? '#1890ff' : 
+                                         genReq.type === 'non-functional' ? '#faad14' : 
+                                         genReq.type === 'validation' ? '#52c41a' : 
+                                         genReq.type === 'security' ? '#f5222d' : '#722ed1',
+                          color: 'white',
+                          fontSize: '11px',
+                          textTransform: 'uppercase',
+                          fontWeight: 'bold'
+                        }}>
+                          {genReq.type ? genReq.type.replace('-', ' ') : 'GENERAL'}
+                        </span>
+                        <span style={{
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          backgroundColor: genReq.priority === 'high' ? '#f5222d' : 
+                                         genReq.priority === 'medium' ? '#faad14' : '#52c41a',
+                          color: 'white',
+                          fontSize: '11px',
+                          textTransform: 'uppercase',
+                          fontWeight: 'bold'
+                        }}>
+                          {genReq.priority} Priority
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleAddGeneratedRequirement(genReq)}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: '#52c41a',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      Add to Project
+                    </button>
+                  </div>
+                  
+                  <div style={{
+                    backgroundColor: '#f8f9fa',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    marginBottom: '12px',
+                    fontSize: '14px',
+                    lineHeight: '1.6'
+                  }}>
+                    {genReq.text}
+                  </div>
+                  
+                  <div style={{
+                    backgroundColor: '#e6f7ff',
+                    padding: '8px 12px',
+                    borderRadius: '4px',
+                    fontSize: '13px'
+                  }}>
+                    <strong>Rationale:</strong> {genReq.rationale}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            {generatedRequirements.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: '#666' }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>🤖</div>
+                <div>No requirements generated</div>
+                <div style={{ fontSize: '14px' }}>Try providing a more detailed user story</div>
+              </div>
+            )}
           </div>
         </>
       )}
