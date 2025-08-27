@@ -1,4 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Tabs } from 'antd';
+import { UnorderedListOutlined, BarChartOutlined, TeamOutlined } from '@ant-design/icons';
+import StakeholderSimulation from './StakeholderSimulation';
+
+const { TabPane } = Tabs;
 
 interface Project {
   id: number;
@@ -702,245 +707,290 @@ const ProjectDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Requirements List */}
+              {/* Tabbed Content - Replace the entire Requirements List section with this */}
               <div style={{
                 backgroundColor: 'white',
-                padding: '24px',
                 borderRadius: '8px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                overflow: 'hidden'
               }}>
-                <h2 style={{ marginTop: 0, marginBottom: '16px' }}>Requirements</h2>
-                
-                {requirements.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '40px 0', color: '#666' }}>
-                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>📄</div>
-                    <div>No requirements yet</div>
-                    <div style={{ fontSize: '14px', marginBottom: '16px' }}>Add your first requirement or generate from a user story</div>
-                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                      <button
-                        onClick={() => setShowGenerateRequirements(true)}
-                        style={{
-                          padding: '8px 16px',
-                          backgroundColor: '#722ed1',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Generate from Story
-                      </button>
-                      <button
-                        onClick={() => setShowAddRequirement(true)}
-                        style={{
-                          padding: '8px 16px',
-                          backgroundColor: '#52c41a',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Add Requirement
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {requirements.map((requirement) => (
-                      <div
-                        key={requirement.id}
-                        style={{
-                          border: '1px solid #d9d9d9',
-                          borderRadius: '6px',
-                          padding: '16px'
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                          <div style={{ flex: 1 }}>
-                            {requirement.title && (
-                              <h4 style={{ margin: 0, marginBottom: '8px', color: '#262626' }}>
-                                {requirement.title}
-                              </h4>
-                            )}
-                            <p style={{ 
-                              margin: 0, 
-                              color: '#595959',
-                              fontSize: '14px',
-                              lineHeight: '1.5'
-                            }}>
-                              {requirement.text.length > 200 ? `${requirement.text.substring(0, 200)}...` : requirement.text}
-                            </p>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: '16px' }}>
-                            <div style={{
-                              padding: '4px 8px',
-                              borderRadius: '12px',
-                              backgroundColor: getStatusColor(requirement.status),
-                              color: 'white',
-                              fontSize: '12px',
-                              fontWeight: 'bold'
-                            }}>
-                              {requirement.status}
-                            </div>
-                            {requirement.qualityScore && (
-                              <div style={{
-                                padding: '4px 8px',
-                                borderRadius: '12px',
-                                backgroundColor: getScoreColor(requirement.qualityScore),
+                <Tabs defaultActiveKey="requirements" style={{ margin: 0 }}>
+                  <TabPane 
+                    tab={
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <UnorderedListOutlined style={{ fontSize: '14px' }} />
+                        Requirements ({selectedProject.requirementCount})
+                      </span>
+                    } 
+                    key="requirements"
+                  >
+                    <div style={{ padding: '24px' }}>
+                      <h2 style={{ marginTop: 0, marginBottom: '16px' }}>Requirements</h2>
+                      
+                      {requirements.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '40px 0', color: '#666' }}>
+                          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📄</div>
+                          <div>No requirements yet</div>
+                          <div style={{ fontSize: '14px', marginBottom: '16px' }}>Add your first requirement or generate from a user story</div>
+                          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                            <button
+                              onClick={() => setShowGenerateRequirements(true)}
+                              style={{
+                                padding: '8px 16px',
+                                backgroundColor: '#722ed1',
                                 color: 'white',
-                                fontSize: '12px',
-                                fontWeight: 'bold'
-                              }}>
-                                {requirement.qualityScore}%
-                              </div>
-                            )}
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Generate from Story
+                            </button>
+                            <button
+                              onClick={() => setShowAddRequirement(true)}
+                              style={{
+                                padding: '8px 16px',
+                                backgroundColor: '#52c41a',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Add Requirement
+                            </button>
                           </div>
                         </div>
-
-                        {/* Analysis Results Preview */}
-                        {requirement.analysis && requirement.analysis.issues && requirement.analysis.issues.length > 0 && (
-                          <div style={{ 
-                            marginBottom: '12px',
-                            padding: '12px', 
-                            backgroundColor: '#f8f9fa', 
-                            borderRadius: '6px',
-                            borderLeft: '4px solid #1890ff'
-                          }}>
-                            <h5 style={{ margin: '0 0 8px 0', color: '#1890ff', fontSize: '13px' }}>Analysis Results:</h5>
-                            <div style={{ fontSize: '12px' }}>
-                              <div style={{ marginBottom: '6px' }}>
-                                <strong>Issues Found: </strong>{requirement.analysis.issues.length}
-                              </div>
-                              {requirement.analysis.issues.slice(0, 2).map((issue: any, index: number) => (
-                                <div key={index} style={{
-                                  padding: '6px',
-                                  marginBottom: '4px',
-                                  backgroundColor: 'white',
-                                  borderRadius: '4px',
-                                  borderLeft: `3px solid ${issue.severity === 'critical' ? '#f5222d' : 
-                                                          issue.severity === 'major' ? '#faad14' : '#52c41a'}`
-                                }}>
-                                  <div style={{ fontWeight: 'bold', fontSize: '11px', textTransform: 'capitalize' }}>
-                                    {issue.type} ({issue.severity})
-                                  </div>
-                                  <div style={{ fontSize: '11px', color: '#666' }}>
-                                    {issue.description.substring(0, 80)}...
-                                  </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {requirements.map((requirement) => (
+                            <div
+                              key={requirement.id}
+                              style={{
+                                border: '1px solid #d9d9d9',
+                                borderRadius: '6px',
+                                padding: '16px'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                <div style={{ flex: 1 }}>
+                                  {requirement.title && (
+                                    <h4 style={{ margin: 0, marginBottom: '8px', color: '#262626' }}>
+                                      {requirement.title}
+                                    </h4>
+                                  )}
+                                  <p style={{ 
+                                    margin: 0, 
+                                    color: '#595959',
+                                    fontSize: '14px',
+                                    lineHeight: '1.5'
+                                  }}>
+                                    {requirement.text.length > 200 ? `${requirement.text.substring(0, 200)}...` : requirement.text}
+                                  </p>
                                 </div>
-                              ))}
-                              {requirement.analysis.issues.length > 2 && (
-                                <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
-                                  +{requirement.analysis.issues.length - 2} more issues
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: '16px' }}>
+                                  <div style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '12px',
+                                    backgroundColor: getStatusColor(requirement.status),
+                                    color: 'white',
+                                    fontSize: '12px',
+                                    fontWeight: 'bold'
+                                  }}>
+                                    {requirement.status}
+                                  </div>
+                                  {requirement.qualityScore && (
+                                    <div style={{
+                                      padding: '4px 8px',
+                                      borderRadius: '12px',
+                                      backgroundColor: getScoreColor(requirement.qualityScore),
+                                      color: 'white',
+                                      fontSize: '12px',
+                                      fontWeight: 'bold'
+                                    }}>
+                                      {requirement.qualityScore}%
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Analysis Results Preview */}
+                              {requirement.analysis && requirement.analysis.issues && requirement.analysis.issues.length > 0 && (
+                                <div style={{ 
+                                  marginBottom: '12px',
+                                  padding: '12px', 
+                                  backgroundColor: '#f8f9fa', 
+                                  borderRadius: '6px',
+                                  borderLeft: '4px solid #1890ff'
+                                }}>
+                                  <h5 style={{ margin: '0 0 8px 0', color: '#1890ff', fontSize: '13px' }}>Analysis Results:</h5>
+                                  <div style={{ fontSize: '12px' }}>
+                                    <div style={{ marginBottom: '6px' }}>
+                                      <strong>Issues Found: </strong>{requirement.analysis.issues.length}
+                                    </div>
+                                    {requirement.analysis.issues.slice(0, 2).map((issue: any, index: number) => (
+                                      <div key={index} style={{
+                                        padding: '6px',
+                                        marginBottom: '4px',
+                                        backgroundColor: 'white',
+                                        borderRadius: '4px',
+                                        borderLeft: `3px solid ${issue.severity === 'critical' ? '#f5222d' : 
+                                                                issue.severity === 'major' ? '#faad14' : '#52c41a'}`
+                                      }}>
+                                        <div style={{ fontWeight: 'bold', fontSize: '11px', textTransform: 'capitalize' }}>
+                                          {issue.type} ({issue.severity})
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: '#666' }}>
+                                          {issue.description.substring(0, 80)}...
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {requirement.analysis.issues.length > 2 && (
+                                      <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
+                                        +{requirement.analysis.issues.length - 2} more issues
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               )}
-                            </div>
-                          </div>
-                        )}
 
-                        {/* Success message when no issues */}
-                        {requirement.analysis && requirement.analysis.issues && requirement.analysis.issues.length === 0 && (
-                          <div style={{ 
-                            marginBottom: '12px',
-                            padding: '12px', 
-                            backgroundColor: '#f6ffed', 
-                            borderRadius: '6px',
-                            borderLeft: '4px solid #52c41a'
-                          }}>
-                            <div style={{ color: '#52c41a', fontSize: '12px', fontWeight: 'bold' }}>
-                              ✓ No quality issues found - This requirement meets high quality standards!
+                              {/* Success message when no issues */}
+                              {requirement.analysis && requirement.analysis.issues && requirement.analysis.issues.length === 0 && (
+                                <div style={{ 
+                                  marginBottom: '12px',
+                                  padding: '12px', 
+                                  backgroundColor: '#f6ffed', 
+                                  borderRadius: '6px',
+                                  borderLeft: '4px solid #52c41a'
+                                }}>
+                                  <div style={{ color: '#52c41a', fontSize: '12px', fontWeight: 'bold' }}>
+                                    ✓ No quality issues found - This requirement meets high quality standards!
+                                  </div>
+                                </div>
+                              )}
+                              
+                              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                <button
+                                  onClick={() => {
+                                    setSelectedRequirement(requirement);
+                                    setShowRequirementDetails(true);
+                                  }}
+                                  style={{
+                                    padding: '6px 12px',
+                                    backgroundColor: '#f0f0f0',
+                                    border: '1px solid #d9d9d9',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px'
+                                  }}
+                                >
+                                  View Details
+                                </button>
+                                
+                                <button
+                                  onClick={() => openEditRequirement(requirement)}
+                                  style={{
+                                    padding: '6px 12px',
+                                    backgroundColor: '#faad14',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px'
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                
+                                {requirement.status === 'Draft' && (
+                                  <button
+                                    onClick={() => handleAnalyzeRequirement(requirement)}
+                                    disabled={loading}
+                                    style={{
+                                      padding: '6px 12px',
+                                      backgroundColor: loading ? '#d9d9d9' : '#1890ff',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      cursor: loading ? 'not-allowed' : 'pointer',
+                                      fontSize: '12px'
+                                    }}
+                                  >
+                                    {loading ? 'Analyzing...' : 'Analyze'}
+                                  </button>
+                                )}
+                                
+                                {requirement.status === 'Analyzed' && (
+                                  <button
+                                    onClick={() => handleEnhanceRequirement(requirement)}
+                                    disabled={loading}
+                                    style={{
+                                      padding: '6px 12px',
+                                      backgroundColor: loading ? '#d9d9d9' : '#52c41a',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      cursor: loading ? 'not-allowed' : 'pointer',
+                                      fontSize: '12px'
+                                    }}
+                                  >
+                                    {loading ? 'Enhancing...' : 'Enhance'}
+                                  </button>
+                                )}
+                                
+                                <button
+                                  onClick={() => handleDeleteRequirement(requirement)}
+                                  style={{
+                                    padding: '6px 12px',
+                                    backgroundColor: '#f5222d',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px'
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        )}
-                        
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                          <button
-                            onClick={() => {
-                              setSelectedRequirement(requirement);
-                              setShowRequirementDetails(true);
-                            }}
-                            style={{
-                              padding: '6px 12px',
-                              backgroundColor: '#f0f0f0',
-                              border: '1px solid #d9d9d9',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              fontSize: '12px'
-                            }}
-                          >
-                            View Details
-                          </button>
-                          
-                          <button
-                            onClick={() => openEditRequirement(requirement)}
-                            style={{
-                              padding: '6px 12px',
-                              backgroundColor: '#faad14',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              fontSize: '12px'
-                            }}
-                          >
-                            Edit
-                          </button>
-                          
-                          {requirement.status === 'Draft' && (
-                            <button
-                              onClick={() => handleAnalyzeRequirement(requirement)}
-                              disabled={loading}
-                              style={{
-                                padding: '6px 12px',
-                                backgroundColor: loading ? '#d9d9d9' : '#1890ff',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: loading ? 'not-allowed' : 'pointer',
-                                fontSize: '12px'
-                              }}
-                            >
-                              {loading ? 'Analyzing...' : 'Analyze'}
-                            </button>
-                          )}
-                          
-                          {requirement.status === 'Analyzed' && (
-                            <button
-                              onClick={() => handleEnhanceRequirement(requirement)}
-                              disabled={loading}
-                              style={{
-                                padding: '6px 12px',
-                                backgroundColor: loading ? '#d9d9d9' : '#52c41a',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: loading ? 'not-allowed' : 'pointer',
-                                fontSize: '12px'
-                              }}
-                            >
-                              {loading ? 'Enhancing...' : 'Enhance'}
-                            </button>
-                          )}
-                          
-                          <button
-                            onClick={() => handleDeleteRequirement(requirement)}
-                            style={{
-                              padding: '6px 12px',
-                              backgroundColor: '#f5222d',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              fontSize: '12px'
-                            }}
-                          >
-                            Delete
-                          </button>
+                          ))}
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      )}
+                    </div>
+                  </TabPane>
+                  
+                  <TabPane 
+                    tab={
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <BarChartOutlined style={{ fontSize: '14px' }} />
+                        Analytics
+                      </span>
+                    } 
+                    key="analytics"
+                  >
+                    <div style={{ padding: '24px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
+                      <h3>Project Analytics</h3>
+                      <p style={{ color: '#666' }}>
+                        Analytics and reporting features for requirements quality,
+                        stakeholder engagement, and project progress coming soon...
+                      </p>
+                    </div>
+                  </TabPane>
+
+                  <TabPane 
+                    tab={
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <TeamOutlined style={{ fontSize: '14px' }} />
+                        AI Stakeholder Questions
+                      </span>
+                    } 
+                    key="stakeholder-simulation"
+                  >
+                    <StakeholderSimulation projectId={selectedProject.id} />
+                  </TabPane>
+                </Tabs>
               </div>
             </>
           ) : (
