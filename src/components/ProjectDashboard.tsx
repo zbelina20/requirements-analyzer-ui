@@ -717,8 +717,8 @@ const ProjectDashboard: React.FC = () => {
                 <Tabs defaultActiveKey="requirements" style={{ margin: 0 }}>
                   <TabPane 
                     tab={
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <UnorderedListOutlined style={{ fontSize: '14px' }} />
+                      <span>
+                        <UnorderedListOutlined />
                         Requirements ({selectedProject.requirementCount})
                       </span>
                     } 
@@ -960,24 +960,6 @@ const ProjectDashboard: React.FC = () => {
                     </div>
                   </TabPane>
                   
-                  <TabPane 
-                    tab={
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <BarChartOutlined style={{ fontSize: '14px' }} />
-                        Analytics
-                      </span>
-                    } 
-                    key="analytics"
-                  >
-                    <div style={{ padding: '24px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-                      <h3>Project Analytics</h3>
-                      <p style={{ color: '#666' }}>
-                        Analytics and reporting features for requirements quality,
-                        stakeholder engagement, and project progress coming soon...
-                      </p>
-                    </div>
-                  </TabPane>
 
                   <TabPane 
                     tab={
